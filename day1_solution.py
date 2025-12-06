@@ -1,8 +1,9 @@
+# this is a Modular Arithmetic % operator problem
 position = 50
 count = 0
 
-with open('1_day.txt') as f:
-    for line in f:
+with open('1_day.txt') as file:
+    for line in file:
         line = line.strip()
         if line:
             direction = line[0]
