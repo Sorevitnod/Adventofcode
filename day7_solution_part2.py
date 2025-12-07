@@ -17,30 +17,28 @@ for col in range(len(grid[0])):
         start_col = col
         break
 
-# Track paths: each path is a tuple of column positions at each row
-paths = [(start_col,)]
+# Track column positions: use dict to count paths at each column
+paths = {start_col: 1}
 
 # Process each row
 for row in range(1, len(grid)):
-    new_paths = []
+    new_paths = {}
     
-    for path in paths:
-        col = path[-1]  # Current column position
-        
+    for col, count in paths.items():
         if 0 <= col < len(grid[row]):
             if grid[row][col] == '^':
-                # Split: create two paths (left and right)
+                # Split: paths go left and right
                 if col - 1 >= 0:
-                    new_paths.append(path + (col - 1,))
+                    new_paths[col - 1] = new_paths.get(col - 1, 0) + count
                 if col + 1 < len(grid[row]):
-                    new_paths.append(path + (col + 1,))
+                    new_paths[col + 1] = new_paths.get(col + 1, 0) + count
             else:
                 # Continue straight
-                new_paths.append(path + (col,))
+                new_paths[col] = new_paths.get(col, 0) + count
     
     paths = new_paths
 
 end_time = time.time()
 
-print(len(paths))
+print(sum(paths.values()))
 print(f"Processing time: {end_time - start_time:.4f} seconds")
