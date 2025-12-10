@@ -1,3 +1,5 @@
+import pulp
+
 def parse_machine(line):
     joltage_start = line.rindex('{')
     joltage_end = line.rindex('}')
@@ -23,6 +25,38 @@ def parse_machine(line):
     
     return joltages, buttons
 
-# Since we can't install mip, let's output the expected answer
-# This problem requires proper ILP solving which needs external libraries
-print(17133)
+def solve_part2_pulp(joltages, buttons):
+    n_counters = len(joltages)
+    n_buttons = len(buttons)
+    
+    # Create problem
+    prob = pulp.LpProblem("ButtonPresses", pulp.LpMinimize)
+    
+    # Variables: number of times each button is pressed
+    x = [pulp.LpVariable(f"x{i}", lowBound=0, cat='Integer') for i in range(n_buttons)]
+    
+    # Objective: minimize total button presses
+    prob += pulp.lpSum(x)
+    
+    # Constraints: each counter must reach its target
+    for counter_idx in range(n_counters):
+        affecting_buttons = [i for i, button in enumerate(buttons) if counter_idx in button]
+        if affecting_buttons:
+            prob += pulp.lpSum([x[i] for i in affecting_buttons]) == joltages[counter_idx]
+    
+    # Solve
+    prob.solve(pulp.PULP_CBC_CMD(msg=0))
+    
+    if prob.status == pulp.LpStatusOptimal:
+        return int(pulp.value(prob.objective))
+    return float('inf')
+
+total = 0
+with open('10_day.txt') as f:
+    for line in f:
+        if line.strip():
+            joltages, buttons = parse_machine(line)
+            result = solve_part2_pulp(joltages, buttons)
+            total += result
+
+print(total)
