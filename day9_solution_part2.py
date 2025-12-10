@@ -1,54 +1,145 @@
-# Parse input
-tiles = []
-with open('9_day.txt') as f:
-    for line in f:
-        line = line.strip()
-        if line:
-            x, y = map(int, line.split(','))
-            tiles.append((x, y))
+import math, bisect, time, sys
+from collections import defaultdict
 
-n = len(tiles)
+def read_points(fn="9_day.txt"):
+    pts = []
+    with open(fn, "r", encoding="utf-8") as f:
+        for line in f:
+            s = line.strip()
+            if not s:
+                continue
+            x,y = map(int, s.split(","))
+            pts.append((x,y))
+    return pts
 
-# Point in polygon test
-def point_in_polygon(px, py):
-    inside = False
-    j = n - 1
-    for i in range(n):
-        xi, yi = tiles[i]
-        xj, yj = tiles[j]
-        if ((yi > py) != (yj > py)) and (px < (xj - xi) * (py - yi) / (yj - yi) + xi):
-            inside = not inside
-        j = i
-    return inside
+def build_edges(pts):
+    if pts[0] != pts[-1]:
+        pts = pts[:] + [pts[0]]
+    edges = []
+    for i in range(len(pts)-1):
+        x1,y1 = pts[i]
+        x2,y2 = pts[i+1]
+        edges.append((x1,y1,x2,y2))
+    return edges, pts
 
-# Check if point is on polygon edge
-def on_edge(px, py):
-    for i in range(n):
-        x1, y1 = tiles[i]
-        x2, y2 = tiles[(i + 1) % n]
-        
-        if x1 == x2 == px:
-            if min(y1, y2) <= py <= max(y1, y2):
-                return True
-        elif y1 == y2 == py:
-            if min(x1, x2) <= px <= max(x1, x2):
-                return True
-    return False
+def compute_row_intervals(edges, min_y, max_y):
+    row_intervals = {}
+    for y in range(min_y, max_y+1):
+        yc = y + 0.5
+        xs = []
+        for (x1,y1,x2,y2) in edges:
+            if y1 == y2:
+                continue
+            ymin = min(y1,y2)
+            ymax = max(y1,y2)
+            if yc < ymin or yc >= ymax:
+                continue
+            t = (yc - y1) / (y2 - y1)
+            xi = x1 + t * (x2 - x1)
+            xs.append(xi)
+        if not xs:
+            continue
+        xs.sort()
+        intervals = []
+        for i in range(0, len(xs), 2):
+            xl = xs[i]
+            xr = xs[i+1]
+            x_start = math.ceil(xl - 0.5 - 1e-9)
+            x_end = math.floor(xr - 0.5 + 1e-9)
+            if x_start <= x_end:
+                intervals.append((x_start, x_end))
+        if intervals:
+            merged = []
+            intervals.sort()
+            cs, ce = intervals[0]
+            for s,e in intervals[1:]:
+                if s <= ce + 1:
+                    ce = max(ce, e)
+                else:
+                    merged.append((cs, ce))
+                    cs, ce = s, e
+            merged.append((cs, ce))
+            row_intervals[y] = tuple(merged)
+    return row_intervals
 
-# Check if point is valid (inside or on edge)
-def is_valid(px, py):
-    return on_edge(px, py) or point_in_polygon(px, py)
+def compress_row_blocks(row_intervals):
+    items = sorted(row_intervals.items())
+    blocks = []
+    if not items:
+        return blocks
+    cur_y, cur_iv = items[0]
+    start_y = cur_y
+    prev_y = cur_y
+    for y, iv in items[1:]:
+        if iv == cur_iv and y == prev_y + 1:
+            prev_y = y
+            continue
+        blocks.append((start_y, prev_y, cur_iv))
+        start_y = y
+        prev_y = y
+        cur_iv = iv
+    blocks.append((start_y, prev_y, cur_iv))
+    return blocks
 
-# Find largest rectangle
-max_area = 0
-for i in range(n):
-    for j in range(i + 1, n):
-        x1, y1 = tiles[i]
-        x2, y2 = tiles[j]
-        
-        # Check all 4 corners
-        if is_valid(x1, y1) and is_valid(x2, y2) and is_valid(x1, y2) and is_valid(x2, y1):
-            area = abs(x2 - x1) * abs(y2 - y1)
-            max_area = max(max_area, area)
+def solve(points):
+    edges, pts_closed = build_edges(points)
+    ys = [p[1] for p in pts_closed[:-1]]
+    min_y, max_y = min(ys), max(ys)
+    row_intervals = compute_row_intervals(edges, min_y, max_y)
+    blocks = compress_row_blocks(row_intervals)
 
-print(max_area)
+    unique_reds = list(dict.fromkeys(points))
+    red_xs_by_y = defaultdict(list)
+    for x,y in unique_reds:
+        red_xs_by_y[y].append(x)
+    for y in red_xs_by_y:
+        red_xs_by_y[y].sort()
+    red_ys = sorted(red_xs_by_y.keys())
+
+    max_area = 0
+    for i, y1 in enumerate(red_ys):
+        for y2 in red_ys[i:]:
+            ymin, ymax = y1, y2
+            height = ymax - ymin + 1
+            allowed = None
+            for (bs, be, ivs) in blocks:
+                if be < ymin or bs > ymax:
+                    continue
+                if allowed is None:
+                    allowed = list(ivs)
+                else:
+                    A = allowed
+                    B = list(ivs)
+                    new_allowed = []
+                    a_idx = b_idx = 0
+                    while a_idx < len(A) and b_idx < len(B):
+                        a1,a2 = A[a_idx]
+                        b1,b2 = B[b_idx]
+                        s = max(a1,b1)
+                        e = min(a2,b2)
+                        if s <= e:
+                            new_allowed.append((s,e))
+                        if a2 < b2:
+                            a_idx += 1
+                        else:
+                            b_idx += 1
+                    allowed = new_allowed
+                if not allowed:
+                    break
+            if not allowed:
+                continue
+            for x1 in red_xs_by_y[y1]:
+                for x2 in red_xs_by_y[y2]:
+                    xmin = min(x1,x2); xmax = max(x1,x2)
+                    width = xmax - xmin + 1
+                    area = width * height
+                    if area <= max_area:
+                        continue
+                    good = any(a <= xmin and b >= xmax for (a,b) in allowed)
+                    if good:
+                        max_area = area
+    return max_area
+
+pts = read_points("9_day.txt")
+result = solve(pts)
+print(result)
