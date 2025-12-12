@@ -1,145 +1,98 @@
-import math, bisect, time, sys
-from collections import defaultdict
+f = open("9_day.txt", "r")
+input_str = f.read().split("\n")
+f.close()
 
-def read_points(fn="9_day.txt"):
-    pts = []
-    with open(fn, "r", encoding="utf-8") as f:
-        for line in f:
-            s = line.strip()
-            if not s:
-                continue
-            x,y = map(int, s.split(","))
-            pts.append((x,y))
-    return pts
+points = []
+for line in input_str:
+    if line.strip():
+        x, y = line.split(",")
+        points.append((int(x), int(y)))
 
-def build_edges(pts):
-    if pts[0] != pts[-1]:
-        pts = pts[:] + [pts[0]]
-    edges = []
-    for i in range(len(pts)-1):
-        x1,y1 = pts[i]
-        x2,y2 = pts[i+1]
-        edges.append((x1,y1,x2,y2))
-    return edges, pts
+def get_direction(point1, point2):
+    if point1[0] == point2[0]:
+        if point1[1] < point2[1]:
+            return "DOWN"
+        else:
+            return "UP"
+    else:
+        if point1[0] < point2[0]:
+            return "RIGHT"
+        else:
+            return "LEFT"
 
-def compute_row_intervals(edges, min_y, max_y):
-    row_intervals = {}
-    for y in range(min_y, max_y+1):
-        yc = y + 0.5
-        xs = []
-        for (x1,y1,x2,y2) in edges:
-            if y1 == y2:
-                continue
-            ymin = min(y1,y2)
-            ymax = max(y1,y2)
-            if yc < ymin or yc >= ymax:
-                continue
-            t = (yc - y1) / (y2 - y1)
-            xi = x1 + t * (x2 - x1)
-            xs.append(xi)
-        if not xs:
-            continue
-        xs.sort()
-        intervals = []
-        for i in range(0, len(xs), 2):
-            xl = xs[i]
-            xr = xs[i+1]
-            x_start = math.ceil(xl - 0.5 - 1e-9)
-            x_end = math.floor(xr - 0.5 + 1e-9)
-            if x_start <= x_end:
-                intervals.append((x_start, x_end))
-        if intervals:
-            merged = []
-            intervals.sort()
-            cs, ce = intervals[0]
-            for s,e in intervals[1:]:
-                if s <= ce + 1:
-                    ce = max(ce, e)
-                else:
-                    merged.append((cs, ce))
-                    cs, ce = s, e
-            merged.append((cs, ce))
-            row_intervals[y] = tuple(merged)
-    return row_intervals
+outer_edge = set([])
+edges = set()
+for i in range(len(points)):
+    point1, point2 = points[i], points[(i + 1) % len(points)]
+    p1_x, p1_y = points[i]
+    p2_x, p2_y = points[(i + 1) % len(points)]
 
-def compress_row_blocks(row_intervals):
-    items = sorted(row_intervals.items())
-    blocks = []
-    if not items:
-        return blocks
-    cur_y, cur_iv = items[0]
-    start_y = cur_y
-    prev_y = cur_y
-    for y, iv in items[1:]:
-        if iv == cur_iv and y == prev_y + 1:
-            prev_y = y
-            continue
-        blocks.append((start_y, prev_y, cur_iv))
-        start_y = y
-        prev_y = y
-        cur_iv = iv
-    blocks.append((start_y, prev_y, cur_iv))
-    return blocks
+    direction = get_direction(point1, point2)
+    dy = abs(point1[1] - point2[1])
+    dx = abs(point1[0] - point2[0])
+    if direction == "UP":
+        start_x, start_y = p1_x, max(p1_y, p2_y)
+        for _ in range(dy + 1):
+            outer_edge.add((start_x - 1, start_y))
+            edges.add((start_x, start_y))
+            start_y -= 1
+    elif direction == "RIGHT":
+        start_x, start_y = min(p1_x, p2_x), p1_y
+        for _ in range(dx + 1):
+            outer_edge.add((start_x, start_y - 1))
+            edges.add((start_x, start_y))
+            start_x += 1
+    elif direction == "DOWN":
+        start_x, start_y = p1_x, min(p1_y, p2_y)
+        for _ in range(dy + 1):
+            outer_edge.add((start_x + 1, start_y))
+            edges.add((start_x, start_y))
+            start_y += 1
+    else:
+        start_x, start_y = max(p1_x, p2_x), p1_y
+        for _ in range(dx + 1):
+            outer_edge.add((start_x, start_y + 1))
+            edges.add((start_x, start_y))
+            start_x -= 1
 
-def solve(points):
-    edges, pts_closed = build_edges(points)
-    ys = [p[1] for p in pts_closed[:-1]]
-    min_y, max_y = min(ys), max(ys)
-    row_intervals = compute_row_intervals(edges, min_y, max_y)
-    blocks = compress_row_blocks(row_intervals)
+for (x, y) in edges:
+    if (x, y) in outer_edge:
+        outer_edge.remove((x, y))
 
-    unique_reds = list(dict.fromkeys(points))
-    red_xs_by_y = defaultdict(list)
-    for x,y in unique_reds:
-        red_xs_by_y[y].append(x)
-    for y in red_xs_by_y:
-        red_xs_by_y[y].sort()
-    red_ys = sorted(red_xs_by_y.keys())
+def rectangle_size(point_x, point_y):
+    dx = abs(point_x[0] - point_y[0]) + 1
+    dy = abs(point_x[1] - point_y[1]) + 1
+    return dx * dy
 
-    max_area = 0
-    for i, y1 in enumerate(red_ys):
-        for y2 in red_ys[i:]:
-            ymin, ymax = y1, y2
-            height = ymax - ymin + 1
-            allowed = None
-            for (bs, be, ivs) in blocks:
-                if be < ymin or bs > ymax:
-                    continue
-                if allowed is None:
-                    allowed = list(ivs)
-                else:
-                    A = allowed
-                    B = list(ivs)
-                    new_allowed = []
-                    a_idx = b_idx = 0
-                    while a_idx < len(A) and b_idx < len(B):
-                        a1,a2 = A[a_idx]
-                        b1,b2 = B[b_idx]
-                        s = max(a1,b1)
-                        e = min(a2,b2)
-                        if s <= e:
-                            new_allowed.append((s,e))
-                        if a2 < b2:
-                            a_idx += 1
-                        else:
-                            b_idx += 1
-                    allowed = new_allowed
-                if not allowed:
-                    break
-            if not allowed:
-                continue
-            for x1 in red_xs_by_y[y1]:
-                for x2 in red_xs_by_y[y2]:
-                    xmin = min(x1,x2); xmax = max(x1,x2)
-                    width = xmax - xmin + 1
-                    area = width * height
-                    if area <= max_area:
-                        continue
-                    good = any(a <= xmin and b >= xmax for (a,b) in allowed)
-                    if good:
-                        max_area = area
-    return max_area
+def check_rectangle(point_x, point_y):
+    r1, c1 = point_x
+    r2, c2 = point_y
+    
+    min_r, max_r = min(r1, r2), max(r1, r2)
+    min_c, max_c = min(c1, c2), max(c1, c2)
+    
+    for c in range(min_c, max_c + 1):
+        if (min_r, c) in outer_edge:
+            return False
+    
+    for r in range(min_r + 1, max_r + 1):
+        if (r, max_c) in outer_edge:
+            return False
+    
+    for c in range(max_c - 1, min_c - 1, -1):
+        if (max_r, c) in outer_edge:
+            return False
+    
+    for r in range(max_r - 1, min_r, -1):
+        if (r, min_c) in outer_edge:
+            return False
+    
+    return True
 
-pts = read_points("9_day.txt")
-result = solve(pts)
-print(result)
+max_size = 0
+for i in range(len(points)):
+    for j in range(i + 1, len(points)):
+        if check_rectangle(points[i], points[j]):
+            max_size = max(max_size, rectangle_size(points[i], points[j]))
+
+print(max_size)
